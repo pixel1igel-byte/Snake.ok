@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Змейка — бонусы</title>
+<style>
+body{margin:0;background:#111;color:#fff;font-family:system-ui;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.wrap{text-align:center} canvas{background:#050505;border:2px solid #555;max-width:90vw;touch-action:none}
+button{font-size:20px;margin:10px;padding:9px 17px;border-radius:10px;border:0}.menu{position:fixed;inset:0;background:#111;display:flex;align-items:center;justify-content:center;z-index:10}.menuBox{background:#1b1b1b;border:1px solid #444;border-radius:16px;padding:24px;max-width:360px;width:calc(100% - 40px);box-sizing:border-box}.menuBox button{display:block;width:100%;margin:10px 0}.menuBox input{font-size:20px;padding:10px;border-radius:8px;border:1px solid #555;background:#090909;color:#fff;width:100%;box-sizing:border-box}.room{position:fixed;top:10px;right:10px;background:#222;border:1px solid #555;border-radius:10px;padding:7px 10px;font-size:14px;z-index:5}.hidden{display:none!important}
+.legend{font-size:14px;line-height:1.5;margin:8px 0 12px}
+</style>
+</head>
+<body>
+<div id="menu" class="menu"><div class="menuBox">
+<h2>🐍 Змейка</h2>
+<button id="soloBtn">Играть одному</button>
+<button id="friendBtn">Играть с другом</button>
+<div id="friendPanel" class="hidden">
+<p>Создай комнату или введи ID друга:</p>
+<button id="createRoomBtn">Создать комнату</button>
+<input id="roomInput" maxlength="8" placeholder="ID комнаты">
+<button id="joinRoomBtn">Подключиться</button>
+<div id="connectStatus"></div>
+</div></div></div>
+<div id="roomBadge" class="room hidden"></div>
+<div class="wrap">
+<h2>🐍 Змейка</h2>
+<div>Счёт: <span id="score">0</span> <span id="status"></span></div>
+<div class="legend">🍎 +1 &nbsp; 🟡 бессмертие &nbsp; 🟣 +2 &nbsp; 🟠 разделение &nbsp; 🔵 магнит &nbsp; 🔴 вражеская змейка</div>
+<canvas id="c" width="480" height="480"></canvas><br>
+<button onclick="restart()">Новая игра</button>
+</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d'),N=24,S=c.width/N;
+let snakes,foods,dir,next,score,timer,immortal=false,immortalTicks=0,magnet=false,magnetTicks=0,enemy=null,enemyRespawnAt=0,enemyTimer=null,enemyInitialSpawnAt=0,enemyScoreFinal=0;
+let playerHp=3,playerHitCooldown=0;
+let multiplayer=false, ws=null, roomId='', remotePlayer=null, remoteLastSeen=0, gameStarted=false, networkTimer=null;
+
+const COLORS={normal:'#7f7',yellow:'#ffd92f',purple:'#b66cff',orange:'#ff9d2e',magnet:'#249cff',apple:'#e44'};
+
+function showMenu(){
+  document.getElementById('menu').classList.remove('hidden');
+  document.getElementById('friendPanel').classList.add('hidden');
+}
+function startSolo(){
+  multiplayer=false; roomId=''; remotePlayer=null; closeSocket();
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('roomBadge').classList.add('hidden');
+  restart();
+}
+function showFriendPanel(){document.getElementById('friendPanel').classList.remove('hidden');}
+function wsUrl(){
+  if(location.protocol==='file:') return null;
+  return (location.protocol==='https:'?'wss://':'ws://')+location.host;
+}
+function setConnectStatus(t){document.getElementById('connectStatus').textContent=t;}
+function openSocket(){
+  const u=wsUrl();
+  if(!u){setConnectStatus('Открой игру через сервер, а не как file://');return null;}
+  closeSocket();
+  ws=new WebSocket(u);
+  ws.onclose=()=>{if(multiplayer)setConnectStatus('Соединение потеряно');};
+  ws.onerror=()=>setConnectStatus('Ошибка соединения');
+  ws.onmessage=e=>{
+    let m; try{m=JSON.parse(e.data)}catch{return;}
+    if(m.type==='room'){roomId=m.room; multiplayer=true; restart(); document.getElementById('menu').classList.add('hidden'); showRoom(); setConnectStatus('Комната создана');}
+    if(m.type==='joined'){roomId=m.room; multiplayer=true; restart(); document.getElementById('menu').classList.add('hidden'); showRoom(); setConnectStatus('Подключено');}
+    if(m.type==='state'){remotePlayer=m.player;remoteLastSeen=Date.now();}
+    if(m.type==='peer_left'){remotePlayer=null;setConnectStatus('Друг отключился');}
+    if(m.type==='error'){setConnectStatus(m.message||'Ошибка');}
+  };
+  return ws;
+}
+function showRoom(){const b=document.getElementById('roomBadge');b.textContent='ID: '+roomId;b.classList.remove('hidden');}
+function createRoom(){const s=openSocket(); if(s)s.onopen=()=>s.send(JSON.stringify({type:'create'}));}
+function joinRoom(){const id=document.getElementById('roomInput').value.trim().toUpperCase(); if(!id)return setConnectStatus('Введи ID комнаты'); const s=openSocket(); if(s)s.onopen=()=>s.send(JSON.stringify({type:'join',room:id}));}
+function closeSocket(){if(ws){try{ws.close()}catch{} ws=null;}}
+function sendState(){
+  if(!multiplayer||!ws||ws.readyState!==1||!snakes?.[0])return;
+  ws.send(JSON.stringify({type:'state',player:{snake:snakes[0],score,hp:playerHp,immortal:!!immortal}}));
+}
+
+function restart(){
+  gameStarted=true;
+  snakes=[[{x:9,y:9},{x:8,y:9},{x:7,y:9}]];
+  if(!multiplayer) remotePlayer=null;
+  dir=next={x:1,y:0}; score=0; immortal=false; immortalTicks=0; playerHp=3; playerHitCooldown=0;
+  foods=[]; enemyFoods=[]; enemy=null; enemyRespawnAt=0; enemyInitialSpawnAt=Date.now(); magnet=false; magnetTicks=0;
+  spawnFood('apple'); spawnFood('apple'); spawnFood('apple');
+  spawnFood('yellow');
+  spawnFood('magnet');
+  spawnFood('purple'); spawnFood('purple');
+  spawnFood('orange');
+  document.getElementById('score').textContent=score;
+  document.getElementById('status').textContent='';
+  clearInterval(timer); clearInterval(enemyTimer); clearInterval(networkTimer);
+  timer=setInterval(step,110);
+  enemyTimer=setInterval(moveEnemy,260);
+  if(multiplayer) networkTimer=setInterval(sendState,110);
+  draw();
+}
+function occupied(x,y){
+  return snakes.some(s=>s.some(p=>p.x===x&&p.y===y)) || foods.some(f=>f.x===x&&f.y===y);
+}
+function spawnFood(type){
+  let f;
+  do{f={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N),type}}while(occupied(f.x,f.y));
+  foods.push(f);
+}
+const enemyZone={minX:4,maxX:19,minY:4,maxY:19};
+let enemyConfinedUntil=0;
+function enemyZoneOccupied(x,y){
+  return enemyFoods.some(f=>f.x===x&&f.y===y) || (enemy && enemy.body.some(p=>p.x===x&&p.y===y));
+}
+function spawnEnemyFood(){
+  let f;
+  do{f={x:enemyZone.minX+Math.floor(Math.random()*(enemyZone.maxX-enemyZone.minX+1)),y:enemyZone.minY+Math.floor(Math.random()*(enemyZone.maxY-enemyZone.minY+1)),type:'enemyApple'}}while(enemyZoneOccupied(f.x,f.y)||snakes.some(s=>s.some(p=>p.x===f.x&&p.y===f.y)));
+  enemyFoods.push(f);
+}
+function ensureEnemyFoods(){
+  while(enemyFoods.length<3) spawnEnemyFood();
+}
+function spawnEnemy(){
+  let head, enemySnake;
+  do{
+    head={x:enemyZone.minX+Math.floor(Math.random()*(enemyZone.maxX-enemyZone.minX+1)),y:enemyZone.minY+Math.floor(Math.random()*(enemyZone.maxY-enemyZone.minY+1))};
+    enemySnake=[
+      {...head},
+      {x:head.x-1,y:head.y},
+      {x:head.x-2,y:head.y}
+    ];
+  }while(enemySnake.some(p=>p.x<enemyZone.minX||p.x>enemyZone.maxX||p.y<enemyZone.minY||p.y>enemyZone.maxY)||enemySnake.some(p=>snakes.some(s=>s.some(q=>q.x===p.x&&q.y===p.y))));
+  enemy={body:enemySnake,dir:{x:1,y:0},next:{x:1,y:0},score:0,hp:3};
+  enemyConfinedUntil=Date.now()+20000;
+  ensureEnemyFoods();
+}
+function killEnemy(){
+  if(enemy) enemyScoreFinal=enemy.score||0;
+  enemy=null;
+  enemyFoods=[];
+  enemyConfinedUntil=0;
+  enemyRespawnAt=Date.now()+30000;
+}
+
+function moveEnemy(){
+  if(multiplayer){draw();return;}
+  const now=Date.now();
+  if(!enemy && !enemyRespawnAt && enemyInitialSpawnAt && now>=enemyInitialSpawnAt){enemyInitialSpawnAt=0;spawnEnemy();}
+  if(!enemy && enemyRespawnAt && now>=enemyRespawnAt){enemyRespawnAt=0;spawnEnemy();}
+  if(!enemy){draw();return;}
+
+  const s=enemy.body,h=s[0],confined=now<enemyConfinedUntil;
+  ensureEnemyFoods();
+  const playerHead=snakes[0]?.[0];
+
+  // Враг охотится за 🔴 красными яблоками, 🔵 синим магнитом
+  // и за синей головой игрока. 🟣 фиолетовое он НЕ преследует —
+  // его он может съесть только случайно.
+  // Во время бессмертия игрока враг боится его и убегает от головы.
+  if(playerHead){
+    let d;
+    if(immortal){
+      const dx=(h.x-playerHead.x+N)%N,dy=(h.y-playerHead.y+N)%N;
+      d=Math.min(dx,N-dx)>=Math.min(dy,N-dy)
+        ? {x:dx<=N/2?1:-1,y:0}
+        : {x:0,y:dy<=N/2?1:-1};
+    }else{
+      // Пока враг заперт в красной зоне:
+      // - если игрок СНАРУЖИ, игрок вообще не является целью — враг охотится за своими яблоками/магнитом;
+      // - если игрок ЗАШЁЛ в красную зону, игрок становится целью выше яблок.
+      // После открытия границ приоритет всегда: 🟣 разделённые змейки → игрок → 🍎/🔵.
+      const playerInZone=playerHead &&
+        playerHead.x>=enemyZone.minX && playerHead.x<=enemyZone.maxX &&
+        playerHead.y>=enemyZone.minY && playerHead.y<=enemyZone.maxY;
+      const priorityTargets=[];
+      if(!confined){
+        for(let si=1;si<snakes.length;si++){
+          if(snakes[si]?.[0]) priorityTargets.push({x:snakes[si][0].x,y:snakes[si][0].y,priority:0});
+        }
+        if(playerHead) priorityTargets.push({x:playerHead.x,y:playerHead.y,priority:1});
+      }else if(playerInZone){
+        if(playerHead) priorityTargets.push({x:playerHead.x,y:playerHead.y,priority:1});
+      }
+      for(const f of foods){
+        if(f.type==='apple'||f.type==='magnet') priorityTargets.push({x:f.x,y:f.y,priority:2});
+      }
+      let target=priorityTargets[0],best=N*2,bestPriority=99;
+      for(const t of priorityTargets){
+        const dx=Math.min((t.x-h.x+N)%N,(h.x-t.x+N)%N);
+        const dy=Math.min((t.y-h.y+N)%N,(h.y-t.y+N)%N);
+        const dist=dx+dy;
+        if(t.priority<bestPriority || (t.priority===bestPriority&&dist<best)){
+          best=dist;bestPriority=t.priority;target=t;
+        }
+      }
+      const dx=(target.x-h.x+N)%N,dy=(target.y-h.y+N)%N;
+      d=Math.min(dx,N-dx)>=Math.min(dy,N-dy)
+        ? {x:dx<=N/2?1:-1,y:0}
+        : {x:0,y:dy<=N/2?1:-1};
+    }
+    // Враг может развернуться, чтобы не застревать, когда цель оказалась позади.
+    enemy.next=d;
+  }
+
+  // Если враг временно заперт в красной зоне, он не может пересечь её границу.
+  enemy.dir=enemy.next;
+  let nx=h.x+enemy.dir.x,ny=h.y+enemy.dir.y;
+  if(confined){
+    if(nx<enemyZone.minX||nx>enemyZone.maxX){enemy.dir.x*=-1;enemy.next=enemy.dir;nx=h.x+enemy.dir.x;}
+    if(ny<enemyZone.minY||ny>enemyZone.maxY){enemy.dir.y*=-1;enemy.next=enemy.dir;ny=h.y+enemy.dir.y;}
+  }else{
+    nx=(nx+N)%N;ny=(ny+N)%N;
+  }
+  const nh={x:nx,y:ny};
+
+  // Отдельные фиолетовые змейки — самостоятельные жертвы врага.
+  // Их уничтожение НЕ убивает основную синюю змейку.
+  let splitHit=-1;
+  for(let si=1;si<snakes.length;si++){
+    if(snakes[si].some(p=>p.x===nh.x&&p.y===nh.y)){splitHit=si;break;}
+  }
+  if(splitHit>=0){
+    snakes.splice(splitHit,1);
+    enemy.score=(enemy.score||0)+5;
+    // За съеденную отдельную змейку враг увеличивается ровно на 5 сегментов.
+    for(let i=0;i<5;i++) s.push({...s[s.length-1]});
+    draw(); return;
+  }
+
+  // Столкновение врага с синей головой тоже снимает 1 HP игрока.
+  // При бессмертии игрок не получает урон, а враг отступает.
+  if(playerHead && nh.x===playerHead.x && nh.y===playerHead.y){
+    if(!immortal){
+      if(playerHitCooldown<=0){
+        playerHitCooldown=10;
+        playerHp--;
+        if(playerHp<=0){
+          gameOver('красный враг врезался в твою синюю голову');
+          return;
+        }
+      }
+      enemy.dir.x*=-1; enemy.dir.y*=-1; enemy.next=enemy.dir;
+      draw(); return;
+    }else{
+      enemy.dir.x*=-1; enemy.dir.y*=-1; enemy.next=enemy.dir;
+      draw(); return;
+    }
+  }
+
+  // Съедает красные яблоки целенаправленно, а фиолетовые — только случайно:
+  // красное/синее преследование теперь относится к игроку.
+  // Фиолетовое враг может съесть только случайно, если на него наткнётся.
+  let fi=enemyFoods.findIndex(f=>f.x===nh.x&&f.y===nh.y);
+  if(fi<0&&!confined) fi=foods.findIndex(f=>f.x===nh.x&&f.y===nh.y&&(f.type==='apple'||f.type==='purple'));
+
+  s.unshift(nh);
+  if(fi>=0){
+    if(fi<enemyFoods.length){enemyFoods.splice(fi,1);spawnEnemyFood();}
+    else {const eaten=foods[fi];foods.splice(fi,1);spawnFood(eaten.type);}
+  }else s.pop();
+  draw();
+}
+
+function allBodies(){
+  const a=[]; snakes.forEach(s=>s.forEach(p=>a.push(p))); return a;
+}
+function opposite(a,b){return a.x===-b.x&&a.y===-b.y}
+
+function step(){
+  dir=next;
+  let newSnakes=[];
+  let ate=[];
+  let mergedIndices=new Set();
+
+  // Движение всех частей. Бортики больше не убивают — змейка проходит сквозь них.
+  for(let si=0;si<snakes.length;si++){
+    if(mergedIndices.has(si)) continue;
+    const s=snakes[si];
+    const h={x:(s[0].x+dir.x+N)%N,y:(s[0].y+dir.y+N)%N};
+
+    // Врезание в собственное тело не убивает змейку.
+
+    let hitOtherIndex=-1;
+    for(let oi=0;oi<snakes.length;oi++){
+      if(oi===si || mergedIndices.has(oi)) continue;
+      if(snakes[oi].some(p=>p.x===h.x&&p.y===h.y)){
+        hitOtherIndex=oi; break;
+      }
+    }
+
+    // Если две половины сталкиваются — становятся одной большой змейкой.
+    if(hitOtherIndex>=0){
+      const ns=s.map(p=>({...p}));
+      ns.unshift({x:h.x,y:h.y});
+      const other=snakes[hitOtherIndex].map(p=>({...p}));
+      const occupiedNow=new Set(ns.map(p=>p.x+','+p.y));
+      for(const q of other){
+        const key=q.x+','+q.y;
+        if(!occupiedNow.has(key)){
+          ns.push(q); occupiedNow.add(key);
+        }
+      }
+      newSnakes.push(ns);
+      mergedIndices.add(si); mergedIndices.add(hitOtherIndex);
+
+      const fi=foods.findIndex(f=>f.x===h.x&&f.y===h.y);
+      if(fi>=0){ate.push(foods[fi]);foods.splice(fi,1)}
+      continue;
+    }
+
+    const ns=s.map(p=>({...p}));
+    ns.unshift({x:h.x,y:h.y});
+
+    const fi=foods.findIndex(f=>f.x===h.x&&f.y===h.y);
+    if(fi>=0){
+      ate.push(foods[fi]); foods.splice(fi,1);
+    }else{
+      ns.pop();
+    }
+    newSnakes.push(ns);
+  }
+
+  // Добавляем ещё не объединённые части, если они не попали в newSnakes.
+  for(let i=0;i<snakes.length;i++){
+    if(!mergedIndices.has(i) && i>=newSnakes.length){
+      // Эта ветка нужна только как страховка; обычное движение уже добавило часть.
+    }
+  }
+  snakes=newSnakes;
+
+  if(multiplayer && remotePlayer && remotePlayer.snake?.length){
+    const head=snakes[0]?.[0];
+    const remote=remotePlayer.snake;
+    const hit=!!head && remote.some(p=>p.x===head.x&&p.y===head.y);
+    if(hit && playerHitCooldown<=0){
+      playerHitCooldown=10;
+      if(immortal){
+        score+=5;
+      }else{
+        playerHp--;
+        if(playerHp<=0){gameOver('врезался головой в змейку друга');return;}
+      }
+    }
+    if(playerHitCooldown>0) playerHitCooldown--;
+  }
+  sendState();
+
+  // Враг: красный, опасный для обычной змейки, но съедаемый во время бессмертия.
+  if(enemy){
+    // Только синяя голова основной змейки может убить/съесть врага.
+    // Телом, хвостом или отдельной фиолетовой змейкой столкновение не смертельно.
+    const head=snakes[0]?.[0];
+    const hitEnemy=!!head && enemy.body.some(e=>e.x===head.x&&e.y===head.y);
+    if(hitEnemy && playerHitCooldown<=0){
+      playerHitCooldown=10; // короткая неуязвимость после удара, чтобы один контакт не снял все 3 HP сразу
+      if(immortal){
+        enemy.hp--;
+        if(enemy.hp<=0){
+          score+=5;
+          killEnemy();
+        }
+      }else{
+        playerHp--;
+        if(playerHp<=0){
+          gameOver('врезался головой в красного врага'); return;
+        }
+      }
+    }
+    if(playerHitCooldown>0) playerHitCooldown--;
+  }
+
+  // Синий магнит притягивает ближайшие красные и фиолетовые яблоки.
+  if(magnet && snakes.length){
+    const ph=snakes[0][0];
+    const occupied=new Set();
+    for(const s of snakes) for(const p of s) occupied.add(p.x+','+p.y);
+
+    for(const f of foods){
+      if(f.type!=='apple' && f.type!=='purple') continue;
+      const dx=(ph.x-f.x+N)%N, dy=(ph.y-f.y+N)%N;
+      const dist=Math.min(dx,N-dx)+Math.min(dy,N-dy);
+      if(dist>5) continue;
+      let nx=f.x, ny=f.y;
+      if(Math.min(dx,N-dx)>=Math.min(dy,N-dy)) nx=(f.x+(dx<=N/2?1:-1)+N)%N;
+      else ny=(f.y+(dy<=N/2?1:-1)+N)%N;
+      const blockedBySnake=occupied.has(nx+','+ny);
+      const blockedByFood=foods.some(g=>g!==f&&g.x===nx&&g.y===ny);
+      if(!blockedBySnake && !blockedByFood){ f.x=nx; f.y=ny; }
+    }
+  }
+
+  for(const f of ate){
+    if(f.type==='apple'){
+      score+=1;
+      spawnFood('apple');
+    }
+    if(f.type==='purple'){
+      score+=2;
+      spawnFood('purple');
+    }
+    if(f.type==='yellow'){
+      immortal=true; immortalTicks=70;
+      spawnFood('yellow');
+    }
+    if(f.type==='magnet'){
+      magnet=true; magnetTicks=90;
+      spawnFood('magnet');
+    }
+    if(f.type==='orange'){
+      // Делим каждую достаточно длинную змейку пополам.
+      // Части получают одинаковое управление и движутся параллельно.
+      let result=[];
+      for(const s of snakes){
+        if(s.length<4){result.push(s);continue}
+        const mid=Math.ceil(s.length/2);
+        const a=s.slice(0,mid).map(p=>({...p}));
+        const b=s.slice(mid).map(p=>({...p}));
+        if(b.length>=2){
+          const offset=dir.x!==0?{x:0,y:2}:{x:2,y:0};
+          const shifted=b.map(p=>({x:(p.x+offset.x+N)%N,y:(p.y+offset.y+N)%N}));
+          result.push(a,shifted);
+        }else result.push(s);
+      }
+      snakes=result;
+      spawnFood('orange');
+    }
+  }
+
+  if(immortal){
+    immortalTicks--;
+    if(immortalTicks<=0) immortal=false;
+  }
+  if(magnet){
+    magnetTicks--;
+    if(magnetTicks<=0) magnet=false;
+  }
+
+  document.getElementById('score').textContent=score;
+  let status=' ❤️'.repeat(playerHp);
+  if(multiplayer) status+=' 🟣 ДРУГ: '+(remotePlayer?'подключён':'ожидание');
+  if(enemy) status+=' 🔴'+enemy.hp+' HP';
+  if(immortal) status+=' 🟡 БЕССМЕРТИЕ';
+  if(magnet) status+=' 🔵 МАГНИТ';
+  if(enemy){
+    status+=' 🔴 ВРАЖЕСКАЯ ЗМЕЙКА';
+  }else if(enemyRespawnAt){
+    status+=' ⚪ врага нет — возродится через '+Math.ceil((enemyRespawnAt-Date.now())/1000)+'с';
+  }else if(enemyInitialSpawnAt){
+    status+=' ⚪ врага нет — появится через '+Math.ceil((enemyInitialSpawnAt-Date.now())/1000)+'с';
+  }else{
+    status+=' ⚪ врага нет';
+  }
+  document.getElementById('status').textContent=status;
+  ensureFoods(); draw();
+}
+
+function ensureFoods(){
+  const counts={apple:0,yellow:0,purple:0,orange:0,magnet:0};
+  foods.forEach(f=>counts[f.type]++);
+
+  while(counts.apple<3){spawnFood('apple');counts.apple++}
+  while(counts.purple<2){spawnFood('purple');counts.purple++}
+  if(!counts.yellow)spawnFood('yellow');
+  if(!counts.magnet)spawnFood('magnet');
+  if(!counts.orange)spawnFood('orange');
+}
+
+function gameOver(reason='неизвестная причина'){
+  clearInterval(timer); clearInterval(enemyTimer);
+  setTimeout(()=>alert('Игра окончена!\nПричина: '+reason+'\nТвой счёт: '+score+'\nСчёт врага: '+(multiplayer?(remotePlayer?.score||0):(enemy?enemy.score:enemyScoreFinal))),10);
+}
+function draw(){
+  ctx.clearRect(0,0,c.width,c.height);
+
+  for(const f of foods){
+    ctx.fillStyle=COLORS[f.type];
+    ctx.beginPath();
+    ctx.arc(f.x*S+S/2,f.y*S+S/2,S*.34,0,Math.PI*2);
+    ctx.fill();
+    if(f.type==='magnet'){
+      ctx.strokeStyle='#fff';
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.arc(f.x*S+S/2,f.y*S+S/2,S*.18,0,Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  if(enemy){
+    ctx.fillStyle='rgba(170,20,20,.18)';
+    ctx.fillRect(enemyZone.minX*S,enemyZone.minY*S,(enemyZone.maxX-enemyZone.minX+1)*S,(enemyZone.maxY-enemyZone.minY+1)*S);
+    ctx.strokeStyle='#a22';ctx.lineWidth=2;
+    ctx.strokeRect(enemyZone.minX*S,enemyZone.minY*S,(enemyZone.maxX-enemyZone.minX+1)*S,(enemyZone.maxY-enemyZone.minY+1)*S);
+    enemyFoods.forEach(f=>{ctx.fillStyle='#e44';ctx.beginPath();ctx.arc(f.x*S+S/2,f.y*S+S/2,S*.34,0,Math.PI*2);ctx.fill();});
+  }
+
+  // Вражеская змейка: всё тело красное, голова тоже выделена.
+  if(enemy){
+    enemy.body.forEach((p,i)=>{
+      ctx.fillStyle=i===0?'#ff5a5a':'#d22';
+      ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);
+    });
+    const h=enemy.body[0];
+    ctx.fillStyle='#fff';
+    ctx.fillRect(h.x*S+S*.22,h.y*S+S*.22,S*.12,S*.12);
+    ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);
+  }
+
+  if(multiplayer && remotePlayer?.snake){
+    const rs=remotePlayer.snake;
+    rs.forEach((p,i)=>{ctx.fillStyle=i===0?'#ff4d9d':'#c22c72';ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);});
+    if(rs.length){const h=rs[0];ctx.fillStyle='#fff';ctx.fillRect(h.x*S+S*.22,h.y*S+S*.22,S*.12,S*.12);ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);}
+  }
+
+  snakes.forEach((s,si)=>{
+    ctx.fillStyle=immortal?COLORS.yellow:(si>0?COLORS.purple:COLORS.normal);
+    s.forEach((p,i)=>{
+      if(i!==0) ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);
+    });
+
+    if(s.length){
+      const h=s[0];
+      ctx.fillStyle='#35c9ff';
+      ctx.fillRect(h.x*S+1,h.y*S+1,S-2,S-2);
+      ctx.fillStyle='#071018';
+      if(dir.x!==0){
+        ctx.fillRect(h.x*S+(dir.x>0?S*.63:S*.22),h.y*S+S*.22,S*.12,S*.12);
+        ctx.fillRect(h.x*S+(dir.x>0?S*.63:S*.22),h.y*S+S*.62,S*.12,S*.12);
+      }else{
+        ctx.fillRect(h.x*S+S*.22,h.y*S+(dir.y>0?S*.63:S*.22),S*.12,S*.12);
+        ctx.fillRect(h.x*S+S*.62,h.y*S+(dir.y>0?S*.63:S*.22),S*.12,S*.12);
+      }
+    }
+  });
+}
+
+addEventListener('keydown',e=>{
+  const a={ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0}}[e.key];
+  if(a&&!opposite(a,dir)){next=a;e.preventDefault()}
+});
+let sx,sy;
+c.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY});
+c.addEventListener('touchend',e=>{
+  let dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<20)return;
+  let a=Math.abs(dx)>Math.abs(dy)?{x:Math.sign(dx),y:0}:{x:0,y:Math.sign(dy)};
+  if(!opposite(a,dir))next=a;
+});
+document.getElementById('soloBtn').addEventListener('click',startSolo);
+document.getElementById('friendBtn').addEventListener('click',showFriendPanel);
+document.getElementById('createRoomBtn').addEventListener('click',createRoom);
+document.getElementById('joinRoomBtn').addEventListener('click',joinRoom);
+showMenu();
+</script>
+</body>
+</html>
