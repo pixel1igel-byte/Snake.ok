@@ -69,6 +69,15 @@ wss.on("connection", ws => {
       return;
     }
 
+    if (msg.type === "gameover") {
+      if (!ws.room) return;
+      const room = rooms.get(ws.room);
+      if (!room) return;
+      ws.lastGameOver = {score:Number(msg.score)||0, reason:String(msg.reason||"")};
+      broadcast(room, ws, {type:"gameover", score:Number(msg.score)||0, reason:String(msg.reason||"")});
+      return;
+    }
+
     if (msg.type === "state") {
       if (!ws.room) return;
       const room = rooms.get(ws.room);
