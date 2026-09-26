@@ -6,4 +6,4 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /health
-    autoDeployTrigger: off
+    autoDeployTrigger: commit
