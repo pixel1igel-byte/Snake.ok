@@ -530,8 +530,8 @@ function draw(){
 
     if(s.length){
       const h=s[0];
-      // В мультиплеере твоя змейка зелёная, в одиночной игре голова остаётся синей.
-      ctx.fillStyle=multiplayer?'#35ff55':'#35c9ff';
+      // Голова всегда синяя — и в одиночной, и в мультиплеере.
+      ctx.fillStyle='#35c9ff';
       ctx.fillRect(h.x*S+1,h.y*S+1,S-2,S-2);
       ctx.fillStyle='#071018';
       if(dir.x!==0){
