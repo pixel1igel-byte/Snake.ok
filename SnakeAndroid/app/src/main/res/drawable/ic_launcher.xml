@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:fillColor="#050505" android:pathData="M10,0 L98,0 Q108,0 108,10 L108,98 Q108,108 98,108 L10,108 Q0,108 0,98 L0,10 Q0,0 10,0Z"/>
+
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#7CFF00"
+        android:strokeWidth="1.8"
+        android:pathData="M10,4 L98,4 Q104,4 104,10 L104,98 Q104,104 98,104 L10,104 Q4,104 4,98 L4,10 Q4,4 10,4Z"/>
+
+    <!-- pixel globe -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#343434"
+        android:strokeWidth="2"
+        android:pathData="M28,20 L80,20 L88,28 L88,80 L80,88 L28,88 L20,80 L20,28 Z"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#343434"
+        android:strokeWidth="2"
+        android:pathData="M20,54 L88,54 M54,20 L54,88"/>
+
+    <!-- online snake -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#73FF00"
+        android:strokeWidth="7"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:pathData="M69,31 L76,38 L76,48 L69,55 L57,55 L50,48 L42,48 L35,55 L35,66 L42,73 L54,73 L61,66 L61,57"/>
+
+    <!-- snake head -->
+    <path android:fillColor="#73FF00" android:pathData="M67,25 L77,25 L83,31 L77,37 L67,37 L61,31 Z"/>
+    <path android:fillColor="#050505" android:pathData="M75,29 L78,29 L78,32 L75,32 Z"/>
+
+    <!-- wireless signals -->
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#73FF00" android:strokeWidth="2.5"
+        android:pathData="M13,40 L18,35 L18,49 L13,54 M13,54 L18,59 L18,73 L13,68"/>
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#73FF00" android:strokeWidth="2.5"
+        android:pathData="M95,40 L90,35 L90,49 L95,54 M95,54 L90,59 L90,73 L95,68"/>
+
+    <!-- pixel accents -->
+    <path android:fillColor="#73FF00" android:pathData="M20,17 L23,17 L23,20 L20,20 Z M85,17 L88,17 L88,20 L85,20 Z M20,88 L23,88 L23,91 L20,91 Z M85,88 L88,88 L88,91 L85,91 Z"/>
+</vector>
