@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'SnakeAndroid/**'
+      - 'snake.html'
       - '.github/workflows/build-apk.yml'
 
 jobs:
@@ -25,6 +26,17 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Prepare game asset
+        run: |
+          python3 - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          src = Path("../snake.html").read_bytes()
+          dst = Path("app/src/main/assets/game.html.gz.b64")
+          dst.parent.mkdir(parents=True, exist_ok=True)
+          dst.write_text(base64.b64encode(gzip.compress(src, mtime=0)).decode("ascii"), encoding="ascii")
+          print(f"Prepared game asset: {len(src)} bytes HTML")
+          PY
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
