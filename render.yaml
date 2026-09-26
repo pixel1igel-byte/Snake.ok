@@ -4,5 +4,6 @@ services:
     runtime: docker
     rootDir: SnakeAndroid/server
     plan: free
+    region: singapore
     healthCheckPath: /health
     autoDeployTrigger: off
