@@ -507,10 +507,19 @@ function draw(){
     ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);
   }
 
+  // В мультиплеере: на своём экране ты всегда зелёный, друг всегда красный.
   if(multiplayer && remotePlayer?.snake){
     const rs=remotePlayer.snake;
-    rs.forEach((p,i)=>{ctx.fillStyle=i===0?'#ff4d9d':'#c22c72';ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);});
-    if(rs.length){const h=rs[0];ctx.fillStyle='#fff';ctx.fillRect(h.x*S+S*.22,h.y*S+S*.22,S*.12,S*.12);ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);}
+    rs.forEach((p,i)=>{
+      ctx.fillStyle=i===0?'#ff5a5a':'#d22';
+      ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);
+    });
+    if(rs.length){
+      const h=rs[0];
+      ctx.fillStyle='#fff';
+      ctx.fillRect(h.x*S+S*.22,h.y*S+S*.22,S*.12,S*.12);
+      ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);
+    }
   }
 
   snakes.forEach((s,si)=>{
@@ -521,7 +530,8 @@ function draw(){
 
     if(s.length){
       const h=s[0];
-      ctx.fillStyle='#35c9ff';
+      // В мультиплеере твоя змейка зелёная, в одиночной игре голова остаётся синей.
+      ctx.fillStyle=multiplayer?'#35ff55':'#35c9ff';
       ctx.fillRect(h.x*S+1,h.y*S+1,S-2,S-2);
       ctx.fillStyle='#071018';
       if(dir.x!==0){
