@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: snake-online-server-pixel1igel
+    runtime: docker
+    rootDir: SnakeAndroid/server
+    plan: free
+    healthCheckPath: /health
+    autoDeployTrigger: off
