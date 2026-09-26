@@ -41,7 +41,7 @@ wss.on("connection", ws => {
     if (msg.type === "create") {
       if (ws.room) return;
       const id = roomId();
-      const room = { players: new Set([ws]) };
+      const room = { players: new Set([ws]), states: new Map() };
       rooms.set(id, room);
       ws.room = id;
       send(ws, {type:"room", room:id});
@@ -60,6 +60,12 @@ wss.on("connection", ws => {
       ws.room = id;
       send(ws, {type:"joined", room:id});
       broadcast(room, ws, {type:"peer_joined"});
+      // Сразу отдаём новому игроку последнее состояние уже подключённого игрока.
+      for (const peer of room.players) {
+        if (peer !== ws && peer.lastState) {
+          send(ws, {type:"state", player:peer.lastState});
+        }
+      }
       return;
     }
 
@@ -67,7 +73,9 @@ wss.on("connection", ws => {
       if (!ws.room) return;
       const room = rooms.get(ws.room);
       if (!room) return;
+      // Храним последнее состояние именно этого соединения.
       ws.lastState = msg.player;
+      room.states.set(ws, msg.player);
       broadcast(room, ws, {type:"state", player:msg.player});
     }
   });
@@ -77,6 +85,7 @@ wss.on("connection", ws => {
     const room = rooms.get(ws.room);
     if (!room) return;
     room.players.delete(ws);
+    room.states.delete(ws);
     broadcast(room, ws, {type:"peer_left"});
     if (room.players.size === 0) rooms.delete(ws.room);
   });
