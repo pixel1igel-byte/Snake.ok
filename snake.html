@@ -35,7 +35,7 @@ button{font-size:20px;margin:10px;padding:9px 17px;border-radius:10px;border:0}.
 const c=document.getElementById('c'),ctx=c.getContext('2d'),N=24,S=c.width/N;
 let snakes,foods,dir,next,score,timer,immortal=false,immortalTicks=0,magnet=false,magnetTicks=0,enemy=null,enemyRespawnAt=0,enemyTimer=null,enemyInitialSpawnAt=0,enemyScoreFinal=0;
 let playerHp=3,playerHitCooldown=0;
-let multiplayer=false, ws=null, roomId='', remotePlayer=null, remoteLastSeen=0, gameStarted=false, networkTimer=null;
+let multiplayer=false, ws=null, roomId='', remotePlayer=null, remoteLastSeen=0, gameStarted=false, networkTimer=null, multiplayerGameOver=false;
 
 const COLORS={normal:'#7f7',yellow:'#ffd92f',purple:'#b66cff',orange:'#ff9d2e',magnet:'#249cff',apple:'#e44'};
 
@@ -73,6 +73,13 @@ function openSocket(){
       remoteLastSeen=Date.now();
     }
     if(m.type==='peer_left'){remotePlayer=null;setConnectStatus('Друг отключился');}
+    if(m.type==='gameover'){
+      multiplayerGameOver=true;
+      clearInterval(timer); clearInterval(enemyTimer); clearInterval(networkTimer);
+      const myScore=score;
+      const friendScore=Number(m.score)||0;
+      setTimeout(()=>alert('Игра окончена!\\nТвой счёт: '+myScore+'\\nСчёт друга: '+friendScore),10);
+    }
     if(m.type==='error'){setConnectStatus(m.message||'Ошибка');}
   };
   return ws;
@@ -100,6 +107,7 @@ function sendState(){
 
 function restart(){
   gameStarted=true;
+  multiplayerGameOver=false;
   snakes=[[{x:9,y:9},{x:8,y:9},{x:7,y:9}]];
   if(!multiplayer) remotePlayer=null;
   dir=next={x:1,y:0}; score=0; immortal=false; immortalTicks=0; playerHp=3; playerHitCooldown=0;
@@ -484,8 +492,20 @@ function ensureFoods(){
 }
 
 function gameOver(reason='неизвестная причина'){
-  clearInterval(timer); clearInterval(enemyTimer);
-  setTimeout(()=>alert('Игра окончена!\nПричина: '+reason+'\nТвой счёт: '+score+'\nСчёт врага: '+(multiplayer?(remotePlayer?.score||0):(enemy?enemy.score:enemyScoreFinal))),10);
+  if(multiplayerGameOver)return;
+  multiplayerGameOver=true;
+  clearInterval(timer); clearInterval(enemyTimer); clearInterval(networkTimer);
+  if(multiplayer && ws && ws.readyState===1){
+    ws.send(JSON.stringify({type:'gameover',score,reason}));
+  }
+  const friendScore=multiplayer?(remotePlayer?.score||0):(enemy?enemy.score:enemyScoreFinal);
+  setTimeout(()=>{
+    if(multiplayer){
+      alert('Игра окончена!\\nТвой счёт: '+score+'\\nСчёт друга: '+friendScore);
+    }else{
+      alert('Игра окончена!\\nПричина: '+reason+'\\nТвой счёт: '+score+'\\nСчёт врага: '+friendScore);
+    }
+  },10);
 }
 function draw(){
   ctx.clearRect(0,0,c.width,c.height);
