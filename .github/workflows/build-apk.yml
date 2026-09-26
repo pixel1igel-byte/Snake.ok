@@ -6,6 +6,7 @@ on:
     paths:
       - 'SnakeAndroid/**'
       - 'snake.html'
+      - 'render.yaml'
       - '.github/workflows/build-apk.yml'
 
 permissions:
