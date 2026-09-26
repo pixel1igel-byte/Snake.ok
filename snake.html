@@ -25,8 +25,11 @@ button{font-size:20px;margin:10px;padding:9px 17px;border-radius:10px;border:0}.
 </div></div></div>
 <div id="roomBadge" class="room hidden"></div>
 <div class="wrap">
-<h2>🐍 Змейка</h2>
-<div>Счёт: <span id="score">0</span> <span id="status"></span></div>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+<h2 style="margin:10px 0">🐍 Змейка</h2>
+<button id="backMenuBtn" style="font-size:15px;margin:4px;padding:7px 10px">← В меню</button>
+</div>
+<div>Счёт: <span id="score">0</span> <span id="multiScores" class="hidden"> | Друг: <span id="friendScore">0</span></span> <span id="status"></span></div>
 <div class="legend">🍎 +1 &nbsp; 🟡 бессмертие &nbsp; 🟣 +2 &nbsp; 🟠 разделение &nbsp; 🔵 магнит &nbsp; 🔴 вражеская змейка</div>
 <canvas id="c" width="480" height="480"></canvas><br>
 <button onclick="restart()">Новая игра</button>
@@ -35,7 +38,7 @@ button{font-size:20px;margin:10px;padding:9px 17px;border-radius:10px;border:0}.
 const c=document.getElementById('c'),ctx=c.getContext('2d'),N=24,S=c.width/N;
 let snakes,foods,dir,next,score,timer,immortal=false,immortalTicks=0,magnet=false,magnetTicks=0,enemy=null,enemyRespawnAt=0,enemyTimer=null,enemyInitialSpawnAt=0,enemyScoreFinal=0;
 let playerHp=3,playerHitCooldown=0;
-let multiplayer=false, ws=null, roomId='', remotePlayer=null, remoteLastSeen=0, gameStarted=false, networkTimer=null, multiplayerGameOver=false;
+let multiplayer=false, ws=null, roomId='', remotePlayer=null, remoteLastSeen=0, gameStarted=false, networkTimer=null, multiplayerGameOver=false, remoteGameOverScore=null;
 
 const COLORS={normal:'#7f7',yellow:'#ffd92f',purple:'#b66cff',orange:'#ff9d2e',magnet:'#249cff',apple:'#e44'};
 
@@ -43,8 +46,18 @@ function showMenu(){
   document.getElementById('menu').classList.remove('hidden');
   document.getElementById('friendPanel').classList.add('hidden');
 }
+function backToMenu(){
+  clearInterval(timer); clearInterval(enemyTimer); clearInterval(networkTimer);
+  closeSocket();
+  multiplayer=false; roomId=''; remotePlayer=null; remoteGameOverScore=null; multiplayerGameOver=false;
+  document.getElementById('roomBadge').classList.add('hidden');
+  document.getElementById('multiScores').classList.add('hidden');
+  document.getElementById('friendScore').textContent='0';
+  document.getElementById('score').textContent='0';
+  showMenu();
+}
 function startSolo(){
-  multiplayer=false; roomId=''; remotePlayer=null; closeSocket();
+  multiplayer=false; roomId=''; remotePlayer=null; remoteGameOverScore=null; closeSocket();
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('roomBadge').classList.add('hidden');
   restart();
@@ -68,6 +81,8 @@ function openSocket(){
     if(m.type==='joined'){roomId=m.room; multiplayer=true; restart(); document.getElementById('menu').classList.add('hidden'); showRoom(); setConnectStatus('Подключено');}
     if(m.type==='state'){
       remotePlayer=m.player;
+      document.getElementById('multiScores').classList.remove('hidden');
+      document.getElementById('friendScore').textContent=Number(remotePlayer.score)||0;
       // Старые серверы присылали только snake — поддерживаем и такой пакет.
       if(!remotePlayer.snakes && remotePlayer.snake) remotePlayer.snakes=[remotePlayer.snake];
       remoteLastSeen=Date.now();
@@ -75,9 +90,12 @@ function openSocket(){
     if(m.type==='peer_left'){remotePlayer=null;setConnectStatus('Друг отключился');}
     if(m.type==='gameover'){
       multiplayerGameOver=true;
+      remoteGameOverScore=Number(m.score)||0;
+      document.getElementById('multiScores').classList.remove('hidden');
+      document.getElementById('friendScore').textContent=remoteGameOverScore;
       clearInterval(timer); clearInterval(enemyTimer); clearInterval(networkTimer);
       const myScore=score;
-      const friendScore=Number(m.score)||0;
+      const friendScore=remoteGameOverScore??(Number(m.score)||0);
       setTimeout(()=>alert('Игра окончена!\\nТвой счёт: '+myScore+'\\nСчёт друга: '+friendScore),10);
     }
     if(m.type==='error'){setConnectStatus(m.message||'Ошибка');}
@@ -110,6 +128,7 @@ function restart(){
   multiplayerGameOver=false;
   snakes=[[{x:9,y:9},{x:8,y:9},{x:7,y:9}]];
   if(!multiplayer) remotePlayer=null;
+  if(multiplayer) { document.getElementById('multiScores').classList.remove('hidden'); document.getElementById('friendScore').textContent=Number(remotePlayer?.score)||0; }
   dir=next={x:1,y:0}; score=0; immortal=false; immortalTicks=0; playerHp=3; playerHitCooldown=0;
   foods=[]; enemyFoods=[]; enemy=null; enemyRespawnAt=0; enemyInitialSpawnAt=Date.now(); magnet=false; magnetTicks=0;
   spawnFood('apple'); spawnFood('apple'); spawnFood('apple');
@@ -498,7 +517,7 @@ function gameOver(reason='неизвестная причина'){
   if(multiplayer && ws && ws.readyState===1){
     ws.send(JSON.stringify({type:'gameover',score,reason}));
   }
-  const friendScore=multiplayer?(remotePlayer?.score||0):(enemy?enemy.score:enemyScoreFinal);
+  const friendScore=multiplayer?(remoteGameOverScore??remotePlayer?.score??0):(enemy?enemy.score:enemyScoreFinal);
   setTimeout(()=>{
     if(multiplayer){
       alert('Игра окончена!\\nТвой счёт: '+score+'\\nСчёт друга: '+friendScore);
@@ -609,6 +628,7 @@ document.getElementById('soloBtn').addEventListener('click',startSolo);
 document.getElementById('friendBtn').addEventListener('click',showFriendPanel);
 document.getElementById('createRoomBtn').addEventListener('click',createRoom);
 document.getElementById('joinRoomBtn').addEventListener('click',joinRoom);
+document.getElementById('backMenuBtn').addEventListener('click',backToMenu);
 showMenu();
 </script>
 </body>
