@@ -66,7 +66,12 @@ function openSocket(){
     let m; try{m=JSON.parse(e.data)}catch{return;}
     if(m.type==='room'){roomId=m.room; multiplayer=true; restart(); document.getElementById('menu').classList.add('hidden'); showRoom(); setConnectStatus('Комната создана');}
     if(m.type==='joined'){roomId=m.room; multiplayer=true; restart(); document.getElementById('menu').classList.add('hidden'); showRoom(); setConnectStatus('Подключено');}
-    if(m.type==='state'){remotePlayer=m.player;remoteLastSeen=Date.now();}
+    if(m.type==='state'){
+      remotePlayer=m.player;
+      // Старые серверы присылали только snake — поддерживаем и такой пакет.
+      if(!remotePlayer.snakes && remotePlayer.snake) remotePlayer.snakes=[remotePlayer.snake];
+      remoteLastSeen=Date.now();
+    }
     if(m.type==='peer_left'){remotePlayer=null;setConnectStatus('Друг отключился');}
     if(m.type==='error'){setConnectStatus(m.message||'Ошибка');}
   };
@@ -77,8 +82,20 @@ function createRoom(){const s=openSocket(); if(s)s.onopen=()=>s.send(JSON.string
 function joinRoom(){const id=document.getElementById('roomInput').value.trim().toUpperCase(); if(!id)return setConnectStatus('Введи ID комнаты'); const s=openSocket(); if(s)s.onopen=()=>s.send(JSON.stringify({type:'join',room:id}));}
 function closeSocket(){if(ws){try{ws.close()}catch{} ws=null;}}
 function sendState(){
-  if(!multiplayer||!ws||ws.readyState!==1||!snakes?.[0])return;
-  ws.send(JSON.stringify({type:'state',player:{snake:snakes[0],score,hp:playerHp,immortal:!!immortal}}));
+  if(!multiplayer||!ws||ws.readyState!==1||!snakes?.length)return;
+  ws.send(JSON.stringify({
+    type:'state',
+    player:{
+      snakes:snakes.map(s=>s.map(p=>({x:p.x,y:p.y}))),
+      snake:snakes[0]||[],
+      score,
+      hp:playerHp,
+      immortal:!!immortal,
+      magnet:!!magnet,
+      dir:{x:dir.x,y:dir.y},
+      tick:Date.now()
+    }
+  }));
 }
 
 function restart(){
@@ -508,18 +525,29 @@ function draw(){
   }
 
   // В мультиплеере: на своём экране ты всегда зелёный, друг всегда красный.
-  if(multiplayer && remotePlayer?.snake){
-    const rs=remotePlayer.snake;
-    rs.forEach((p,i)=>{
-      ctx.fillStyle=i===0?'#ff5a5a':'#d22';
-      ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);
+  if(multiplayer && remotePlayer){
+    const remoteSnakes=remotePlayer.snakes || (remotePlayer.snake?[remotePlayer.snake]:[]);
+    remoteSnakes.forEach((rs)=>{
+      rs.forEach((p,i)=>{
+        ctx.fillStyle=i===0?'#35c9ff':'#d22';
+        ctx.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);
+      });
+      if(rs.length){
+        const h=rs[0];
+        // Голова друга всегда синяя.
+        ctx.fillStyle='#35c9ff';
+        ctx.fillRect(h.x*S+1,h.y*S+1,S-2,S-2);
+        ctx.fillStyle='#071018';
+        const rd=remotePlayer.dir||{x:1,y:0};
+        if(rd.x!==0){
+          ctx.fillRect(h.x*S+(rd.x>0?S*.63:S*.22),h.y*S+S*.22,S*.12,S*.12);
+          ctx.fillRect(h.x*S+(rd.x>0?S*.63:S*.22),h.y*S+S*.62,S*.12,S*.12);
+        }else{
+          ctx.fillRect(h.x*S+S*.22,h.y*S+(rd.y>0?S*.63:S*.22),S*.12,S*.12);
+          ctx.fillRect(h.x*S+S*.62,h.y*S+(rd.y>0?S*.63:S*.22),S*.12,S*.12);
+        }
+      }
     });
-    if(rs.length){
-      const h=rs[0];
-      ctx.fillStyle='#fff';
-      ctx.fillRect(h.x*S+S*.22,h.y*S+S*.22,S*.12,S*.12);
-      ctx.fillRect(h.x*S+S*.62,h.y*S+S*.22,S*.12,S*.12);
-    }
   }
 
   snakes.forEach((s,si)=>{
