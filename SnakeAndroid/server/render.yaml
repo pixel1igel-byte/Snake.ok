@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: snake-online-server
+    runtime: docker
+    rootDir: SnakeAndroid/server
+    plan: free
+    healthCheckPath: /health
