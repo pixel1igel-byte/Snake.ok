@@ -1,6 +1,7 @@
 name: Build Snake Online APK
 
 on:
+  # Build APK whenever game, Android, server, or workflow files change.
   workflow_dispatch:
   push:
     paths:
